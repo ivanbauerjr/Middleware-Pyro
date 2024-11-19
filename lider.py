@@ -4,7 +4,8 @@ import Pyro5.api
 class Lider:
     def __init__(self):
         self.data = []
-        self.subscribers = []
+        self.subscribers = {}
+        self.heartbeats = {}
 
     def get_data(self):
         return self.data
@@ -36,6 +37,11 @@ class Lider:
             except Exception:
                 print(f"[Líder] Falha detectada no {subscriber_uri}")
                 self.promote_observer()
+
+    #Registra o heartbeat recebido de um votante.
+    def register_heartbeat(self, voter_uri):
+        self.heartbeats[voter_uri] = True
+        print(f"[Líder] Heartbeat recebido de {voter_uri}")
 
     def promote_observer(self):
         for subscriber_uri in self.subscribers:

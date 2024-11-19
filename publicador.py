@@ -9,8 +9,8 @@ def enviar_mensagem():
         return
     
     try:
-        with Pyro5.api.Proxy("PYRONAME:Lider-Epoca1") as lider:
-            lider.publicar_mensagem(msg)
+        with Pyro5.api.Proxy("PYRONAME:Lider_Epoca1") as lider:
+            lider.publish_message(msg)
             messagebox.showinfo("Sucesso", "Mensagem publicada com sucesso!")
             input_field.delete(0, tk.END)
     except Exception as e:

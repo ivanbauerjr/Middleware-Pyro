@@ -7,6 +7,7 @@ class Broker:
     def __init__(self, name, role):
         self.name = name
         self.role = role
+        self.uri = None
         self.data = []
 
     def update_log(self, leader_log):
@@ -17,15 +18,15 @@ class Broker:
         print(f"[{self.role} {self.name}] Heartbeat recebido do líder.")
 
     def send_heartbeat(self, leader_uri):
+        """Envia heartbeats periódicos ao líder."""
         leader = Pyro5.api.Proxy(leader_uri)
         while True:
             try:
-                time.sleep(3)
-                leader.register_heartbeat(Pyro5.api.current_context.client)
-                print(f"[{self.role} {self.name}] Heartbeat enviado.")
+                leader.register_heartbeat(str(self.uri))  # Envia a URI como string
+                print(f"[{self.role} {self.name}] Heartbeat enviado para o líder.")
             except Exception as e:
                 print(f"[{self.role} {self.name}] Erro ao enviar heartbeat: {e}")
-                break
+            time.sleep(5)  # Ajuste o intervalo de envio do heartbeat
 
     def promote_to_voter(self):
         self.role = "Votante"
@@ -35,7 +36,8 @@ def start_broker(name, role):
     broker = Broker(name, role)
     daemon = Pyro5.api.Daemon()
     uri = daemon.register(broker)
-
+    broker.uri = uri  # Atribui a URI ao broker
+    
     with Pyro5.api.locate_ns() as ns:
         leader_uri = ns.lookup("Lider_Epoca1")
         leader = Pyro5.api.Proxy(leader_uri)
