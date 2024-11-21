@@ -5,7 +5,7 @@ from tkinter import messagebox
 def atualizar_mensagens():
     try:
         with Pyro5.api.Proxy("PYRONAME:Lider_Epoca1") as lider:
-            mensagens = lider.get_data()
+            mensagens = lider.get_confirmed_messages()
             listbox.delete(0, tk.END)  # Limpa a lista
             if mensagens:
                 for msg in mensagens:
