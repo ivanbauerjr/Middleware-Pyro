@@ -23,12 +23,13 @@ class Lider:
 
         # Envia a mensagem para os votantes replicarem
         for subscriber_uri in self.subscribers:
-            if "Votante" in self.get_subscriber_role(subscriber_uri):
-                try:
-                    subscriber = Pyro5.api.Proxy(subscriber_uri)
+            try:
+                subscriber = Pyro5.api.Proxy(subscriber_uri)
+                role = subscriber.get_role()  # Obtém o role do votante
+                if "Votante" in role:  # Verifica se é um votante
                     subscriber.replicate_log(message)
-                except Exception as e:
-                    print(f"[Líder] Falha ao enviar mensagem para {subscriber_uri}: {e}")
+            except Exception as e:
+                print(f"[Líder] Falha ao enviar mensagem para {subscriber_uri}: {e}")
 
     def confirm_commit(self, message, voter_name):
         if message not in self.pending_confirmations:
