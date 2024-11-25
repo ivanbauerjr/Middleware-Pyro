@@ -20,7 +20,14 @@ class Lider:
 
     def get_confirmed_messages(self):
         return self.confirmed_messages
+    
+    def get_data(self):
+        return self.data
+    
+    def get_offset(self):
+        return self.offset
 
+    # 1. O líder recebe uma gravação e a adiciona ao seu log
     def publish_message(self, message):
         # Incrementa o offset para cada nova mensagem
         self.offset += 1
@@ -29,15 +36,50 @@ class Lider:
         print(f"[Líder] Mensagem adicionada ao log (pendente): {log_entry}")
         self.pending_confirmations[self.offset] = []  # Usar offset como chave
 
-        # Envia a mensagem para os votantes replicarem
+        # 2. O líder notifica os votantes para que busquem os dados atualizados
         for subscriber_uri in self.subscribers:
             try:
                 subscriber = Pyro5.api.Proxy(subscriber_uri)
                 role = subscriber.get_role()
                 if "Votante" in role:
-                    subscriber.replicate_log(log_entry, self.epoch)
+                    subscriber.replicate_log()
             except Exception as e:
                 print(f"[Líder] Falha ao enviar mensagem para {subscriber_uri}: {e}")
+
+    #4. Ao receber uma requisição de busca, o líder verifica se o offset de
+    #busca e a época de busca são consistentes com seu próprio log.
+    #Se não coincidirem, a resposta da busca indicará um erro e
+    #informará a maior época e seu offset final antes da época
+    #solicitada. Se a solicitação for válida, ele retornará os dados
+    #correspondentes a partir do offset fornecido na requisição;
+    def handle_search_request(self, epoch, offset, voter_uri):
+        if epoch == self.epoch:
+            if offset < self.offset:
+                # O votante solicitou dados que já existem no log
+                data_to_send = self.data[offset:]
+                try:
+                    # Enviar dados de volta ao votante
+                    voter = Pyro5.api.Proxy(voter_uri)
+                    voter.receive_data(data_to_send)
+                    print(f"[Líder] Dados enviados para {voter_uri}: {data_to_send}")
+                except Exception as e:
+                    print(f"[Líder] Erro ao enviar dados para {voter_uri}: {e}")
+            else:
+                print(f"[Líder] Offset solicitado maior do que o disponível. Erro.")
+                # Caso o offset solicitado seja maior que o disponível, retorna o erro
+                try:
+                    voter = Pyro5.api.Proxy(voter_uri)
+                    voter.receive_error(self.epoch, self.offset)
+                except Exception as e:
+                    print(f"[Líder {self.name}] Erro ao responder erro ao {voter_uri}: {e}")
+        else:
+            print(f"[Líder {self.name}] Requisição de época inconsistente: {epoch} != {self.epoch}")
+            try:
+                # Se a época do líder for diferente, envia erro
+                voter = Pyro5.api.Proxy(voter_uri)
+                voter.receive_epoch_error(self.epoch)
+            except Exception as e:
+                print(f"[Líder {self.name}] Erro ao responder erro de época ao {voter_uri}: {e}")
 
     def confirm_commit(self, offset, voter_uri):
         if offset not in self.pending_confirmations:
@@ -50,11 +92,13 @@ class Lider:
         # Verifica se o quórum foi atingido
         if len(self.pending_confirmations[offset]) >= self.quorum_size:
             print(f"[Líder] Mensagem com offset {offset} confirmada e comprometida.")
+
+            # Adicionar a mensagem completa com epoch e offset
             '''
-                # Adicionar a mensagem completa com epoch e offset
                 self.confirmed_messages.append(
                     next(entry for entry in self.data if entry["offset"] == offset)
                 )'''
+            
             # Adiciona somente a mensagem
             self.confirmed_messages.append(
                 next(entry["message"] for entry in self.data if entry["offset"] == offset)

@@ -20,16 +20,52 @@ class Broker:
         self.role = new_role
         print(f"[{self.role} {self.name}] Role atualizado para {new_role}.")
 
-    def update_log(self, leader_log, leader_epoch):
-        if leader_epoch >= self.epoch:  # Atualiza apenas se a época do líder for igual ou mais recente
-            self.data = leader_log
-            self.epoch = leader_epoch
-            self.offset = len(leader_log)
-            print(f"[{self.role} {self.name}] Log atualizado: {self.data}, Época: {self.epoch}, Offset: {self.offset}")
-        else:
-            print(f"[{self.role} {self.name}] Log não atualizado. Época local: {self.epoch}, Época do líder: {leader_epoch}")
+    def update_log(self, leader_data, leader_offset, leader_epoch):
+        self.data = leader_data
+        self.epoch = leader_epoch
+        self.offset = leader_offset
+        print(f"[{self.role} {self.name}] Log atualizado: Época: {self.epoch}, Offset: {self.offset}")
 
-    def replicate_log(self, message, leader_epoch):
+    def replicate_log(self):
+        self.send_search_request(self.epoch, self.offset)
+
+    #3. Os votantes, ao receberem a notificação, enviam uma requisição
+    #de busca ao líder, incluindo a época de onde querem buscar os
+    #dados (isto é, época do último offset que possuem em seu log
+    #local) e o offset de busca;
+    def send_search_request(self, epoch, offset):
+        try:
+            with Pyro5.api.locate_ns() as ns:
+                leader_uri = ns.lookup(f"Lider_Epoca{epoch}")
+                leader = Pyro5.api.Proxy(leader_uri)
+                leader.handle_search_request(epoch, offset, str(self.uri))
+        except Exception as e:
+            print(f"[Votante {self.name}] Erro ao enviar requisição de busca: {e}")
+
+
+    def receive_data(self, data):
+        self.data.append(data)  # Adiciona ao log local
+        self.offset = len(self.data)
+        print(f"[{self.role} {self.name}] Dados recebidos: {data}, Offset: {self.offset}")
+        try:
+            with Pyro5.api.locate_ns() as ns:
+                leader_uri = ns.lookup(f"Lider_Epoca{self.epoch}")
+                leader = Pyro5.api.Proxy(leader_uri)
+                leader.confirm_commit(self.offset, str(self.uri))
+        except Exception as e:
+            print(f"[Votante {self.name}] Falha ao confirmar mensagem: {e}")
+
+    # 5. Pode ocorrer de um votante divergir do líder em relação às entradas do log...
+    def receive_error(self, epoch, offset):
+        print(f"[Votante {self.name}] Erro recebido. A época {epoch} possui dados confirmados até o offset {offset}.")
+        # Truncando o log local até o offset informado
+        self.data = self.data[:offset]
+        self.offset = offset
+        # Reenviando a requisição de busca com a época e offset corretos
+        self.send_search_request(epoch, offset)
+    
+    '''
+    def replicate_log(self):
         if leader_epoch == self.epoch:  # Verifica se a época é consistente
             self.data.append(message)  # Adiciona ao log local
             self.offset += 1
@@ -44,7 +80,7 @@ class Broker:
                 print(f"[Votante {self.name}] Falha ao confirmar mensagem: {e}")
         else:
             print(f"[Votante {self.name}] Época inconsistente. Local: {self.epoch}, Líder: {leader_epoch}")
-
+    '''
 
 
     # Envia heartbeats periódicos ao líder.
@@ -58,8 +94,8 @@ class Broker:
                     print(f"[{self.role} {self.name}] Heartbeat enviado para o líder.")
             except Exception as e:
                 print(f"[{self.role} {self.name}] Erro ao enviar heartbeat: {e}")
-            #time.sleep(9)  # Ajuste o intervalo de envio do heartbeat
-            time.sleep(33)  # Teste para fazer o temporizador falhar
+            time.sleep(9)  # Ajuste o intervalo de envio do heartbeat
+            #time.sleep(33)  # Teste para fazer o temporizador falhar
 
 
     def promote_to_voter(self):
@@ -69,7 +105,7 @@ class Broker:
         with Pyro5.api.locate_ns() as ns:
             leader_uri = ns.lookup("Lider_Epoca1")
             leader = Pyro5.api.Proxy(leader_uri)
-            self.update_log(leader.get_confirmed_messages(), leader.get_epoch())
+            self.update_log(leader.get_data(), leader.get_offset(), leader.get_epoch())
 
     def update_voter_list(self, voters):
         def update():
