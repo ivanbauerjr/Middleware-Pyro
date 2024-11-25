@@ -87,21 +87,10 @@ class Lider:
         # Inicia a notificação em uma nova thread
         threading.Thread(target=notify).start()
 
-
     # Registra o heartbeat recebido de um votante
     def register_heartbeat(self, voter_uri):
         self.last_heartbeat[voter_uri] = time.time()  # Atualiza o tempo do último heartbeat
         print(f"[Líder] Heartbeat recebido de {voter_uri}")
-
-    def promote_observer(self):
-        for subscriber_uri in self.subscribers:
-            try:
-                subscriber = Pyro5.api.Proxy(subscriber_uri)
-                if subscriber.get_role() == "Observador":
-                    subscriber.promote_to_voter()
-                    return
-            except Exception as e:
-                print(f"[Líder] Erro ao promover observador: {e}")
 
     # Verifica a disponibilidade dos votantes com base no tempo do último heartbeat.
     def check_voter_availability(self):
@@ -112,20 +101,40 @@ class Lider:
             print(f"[Líder] Checando {voter_uri} - Último heartbeat: {last_time}")
             if current_time - last_time > self.timeout:
                 print(f"[Líder] Votante {voter_uri} falhou ou está indisponível.")
-                # Remover votante da lista de subscribers
-                if voter_uri in self.subscribers:
-                    del self.subscribers[voter_uri]  # Remove o votante falho da lista de subscribers
-                    print(f"[Líder] Votante {voter_uri} removido da lista de votantes.")
-                
-                # Verificar se o quorum é suficiente após a remoção
-                num_voters = len([uri for uri, role in self.subscribers.items() if "Votante" in role])
+
+                num_voters = len([uri for uri, role in self.subscribers.items() if "Votante" in role]) - 1
                 if num_voters < self.quorum_size:
                     print("[Líder] Quórum não atingido. Promovendo observador!")
                     self.promote_observer()
+
+                if voter_uri in self.subscribers:
+                    # Altera o papel de "Votante" para "Observador"
+                    self.subscribers[voter_uri] = "Observador"
+                    print(f"[Líder] Votante {voter_uri} alterado para Observador.")
+
+                    # Notificar o votante para que ele saiba sobre a mudança
+                    try:
+                        subscriber = Pyro5.api.Proxy(voter_uri)
+                        subscriber.update_role("Observador")  # Aqui você pode notificar o votante sobre a mudança
+                        self.notify_voters_participants_list()  # Notificar todos os votantes após as mudanças
+                    except Exception as e:
+                        print(f"[Líder] Erro ao notificar {voter_uri}: {e}")
+                
             else:
                 print(f"[Líder] Votante {voter_uri} está ativo.")
 
-
+    def promote_observer(self):
+        for subscriber_uri in self.subscribers:
+            try:
+                subscriber = Pyro5.api.Proxy(subscriber_uri)
+                if subscriber.get_role() == "Observador":
+                    subscriber.promote_to_voter()
+                    self.subscribers[subscriber_uri] = "Votante"
+                    print(f"[Líder] {subscriber_uri} promovido de Observador para Votante.")
+                    #self.notify_voters_participants_list()  # Notificar todos os votantes após a promoção
+                    break  # Assim que promover o primeiro, notifica e sai
+            except Exception as e:
+                print(f"[Líder] Erro ao promover observador: {e}")
 
 
     def start_heartbeat_check(self):

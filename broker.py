@@ -16,6 +16,10 @@ class Broker:
     def get_role(self):
         return self.role  # Método para retornar o role do broker
 
+    def update_role(self, new_role):
+        self.role = new_role
+        print(f"[{self.role} {self.name}] Role atualizado para {new_role}.")
+
     def update_log(self, leader_log, leader_epoch):
         if leader_epoch >= self.epoch:  # Atualiza apenas se a época do líder for igual ou mais recente
             self.data = leader_log
@@ -35,7 +39,7 @@ class Broker:
                 with Pyro5.api.locate_ns() as ns:
                     leader_uri = ns.lookup(f"Lider_Epoca{self.epoch}")
                     leader = Pyro5.api.Proxy(leader_uri)
-                    leader.confirm_commit(self.offset, str(self.uri))  # Passa o URI
+                    leader.confirm_commit(self.offset, str(self.uri))
             except Exception as e:
                 print(f"[Votante {self.name}] Falha ao confirmar mensagem: {e}")
         else:
@@ -48,27 +52,28 @@ class Broker:
         leader = Pyro5.api.Proxy(leader_uri)
         while True:
             try:
-                leader.register_heartbeat(str(self.uri))  # Envia a URI como string
-                print(f"[{self.role} {self.name}] Heartbeat enviado para o líder.")
+                # Se for um votante, envia o heartbeat com o URI do votante
+                if self.role == "Votante":
+                    leader.register_heartbeat(str(self.uri))  # Envia a URI como string
+                    print(f"[{self.role} {self.name}] Heartbeat enviado para o líder.")
             except Exception as e:
                 print(f"[{self.role} {self.name}] Erro ao enviar heartbeat: {e}")
-            time.sleep(9)  # Ajuste o intervalo de envio do heartbeat
-            # time.sleep(22)  # Teste para fazer o temporizador falhar
+            #time.sleep(9)  # Ajuste o intervalo de envio do heartbeat
+            time.sleep(33)  # Teste para fazer o temporizador falhar
 
 
     def promote_to_voter(self):
-        self.role = "Votante"
         print(f"[{self.role} {self.name}] Promovido a votante.")
+        self.role = "Votante"
         # O novo votante deverá solicitar dados ao líder para garantir que possui a versão mais recente dos dados.
         with Pyro5.api.locate_ns() as ns:
             leader_uri = ns.lookup("Lider_Epoca1")
             leader = Pyro5.api.Proxy(leader_uri)
-            leader.register_subscriber(str(self.uri, self.role))
-            self.update_log(leader.get_confirmed_messages())
+            self.update_log(leader.get_confirmed_messages(), leader.get_epoch())
 
     def update_voter_list(self, voters):
         def update():
-            #time.sleep(5)
+            #time.sleep(1)
             self.voters = voters
             print(f"[{self.role} {self.name}] Lista de votantes atualizada: {self.voters}")
         
@@ -90,9 +95,8 @@ def start_broker(name, role):
         leader.register_subscriber(str(uri), role)
         print(f"[{role} {name}] Registrado no líder em {uri}")
 
-        # Inicia heartbeat para brokers votantes
-        if role != "Observador":
-            Thread(target=broker.send_heartbeat, args=(leader_uri,)).start()
+        # Inicia heartbeat
+        Thread(target=broker.send_heartbeat, args=(leader_uri,)).start()
 
     daemon.requestLoop()
     print(f"Broker {role} {name} terminado.")  # Print indicando que a execução do broker terminou
