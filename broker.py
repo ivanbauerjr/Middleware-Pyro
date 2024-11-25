@@ -63,12 +63,17 @@ class Broker:
         with Pyro5.api.locate_ns() as ns:
             leader_uri = ns.lookup("Lider_Epoca1")
             leader = Pyro5.api.Proxy(leader_uri)
-            leader.register_subscriber(str(self.uri))
+            leader.register_subscriber(str(self.uri, self.role))
             self.update_log(leader.get_confirmed_messages())
 
-    def update_voter_list(self, voter_list):
-        self.voters = voter_list
-        print(f"[{self.role} {self.name}] Lista de participantes atualizada: {self.voters}")
+    def update_voter_list(self, voters):
+        def update():
+            #time.sleep(5)
+            self.voters = voters
+            print(f"[{self.role} {self.name}] Lista de votantes atualizada: {self.voters}")
+        
+        # Rodando a atualização da lista em uma thread separada
+        Thread(target=update).start()
 
 def start_broker(name, role):
     print(f"Iniciando broker {role} {name}...")  # Print indicando que a thread foi iniciada

@@ -71,16 +71,21 @@ class Lider:
         elif self.subscribers[subscriber_uri] != role:
             self.subscribers[subscriber_uri] = role
             print(f"[Líder] Atualizado: {subscriber_uri} para {role}")
+        self.notify_voters_participants_list()
 
-    #Notifica todos os votantes sobre a mudança no quórum
-    def notify_voters_list(self):
-        for subscriber_uri in self.subscribers:
-            try:
-                voter = Pyro5.api.Proxy(subscriber_uri)
-                voter.update_voter_list(self.subscribers)  # Envia a lista completa de participantes
-                print(f"Notificando votante {subscriber_uri} sobre a nova lista de participantes.")
-            except Exception as e:
-                print(f"Erro ao notificar votante {subscriber_uri}: {e}")
+    def notify_voters_participants_list(self):
+        voters = [uri for uri, role in self.subscribers.items() if "Votante" in role]
+        # Cria uma nova thread para não bloquear as threads principais
+        def notify():
+            for subscriber_uri in list(self.subscribers):
+                try:
+                    subscriber = Pyro5.api.Proxy(subscriber_uri)
+                    subscriber.update_voter_list(voters)  # Envia a lista completa de participantes
+                    print(f"Notificando votante {subscriber_uri} sobre a nova lista de participantes.")
+                except Exception as e:
+                    print(f"Erro ao notificar votante {subscriber_uri}: {e}") 
+        # Inicia a notificação em uma nova thread
+        threading.Thread(target=notify).start()
 
 
     # Registra o heartbeat recebido de um votante
@@ -107,9 +112,16 @@ class Lider:
             print(f"[Líder] Checando {voter_uri} - Último heartbeat: {last_time}")
             if current_time - last_time > self.timeout:
                 print(f"[Líder] Votante {voter_uri} falhou ou está indisponível.")
-                #if len(self.active_voters) < self.quorum_size:
-                print("[Líder] Quórum não atingido. Promovendo observador!")
-                self.promote_observer()
+                # Remover votante da lista de subscribers
+                if voter_uri in self.subscribers:
+                    del self.subscribers[voter_uri]  # Remove o votante falho da lista de subscribers
+                    print(f"[Líder] Votante {voter_uri} removido da lista de votantes.")
+                
+                # Verificar se o quorum é suficiente após a remoção
+                num_voters = len([uri for uri, role in self.subscribers.items() if "Votante" in role])
+                if num_voters < self.quorum_size:
+                    print("[Líder] Quórum não atingido. Promovendo observador!")
+                    self.promote_observer()
             else:
                 print(f"[Líder] Votante {voter_uri} está ativo.")
 
