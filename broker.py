@@ -64,6 +64,13 @@ class Broker:
         # Reenviando a requisição de busca com a época e offset corretos
         self.send_search_request(epoch, offset)
     
+    # Não deve ocorrer pois estamos assumindo que o líder é sempre confiável
+    def receive_epoch_error(self, epoch):
+        print(f"[Votante {self.name}] Erro de época recebido. A época correta é {epoch}.")
+        # Atualizando a época e reenviando a requisição de busca
+        self.epoch = epoch
+        self.send_search_request(epoch, self.offset)
+
     '''
     def replicate_log(self):
         if leader_epoch == self.epoch:  # Verifica se a época é consistente
