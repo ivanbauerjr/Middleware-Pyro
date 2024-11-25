@@ -6,7 +6,7 @@ import Pyro5.api
 class Lider:
     def __init__(self):
         self.data = []
-        self.subscribers = {}
+        self.subscribers = {} # Participantes, tanto votantes quanto observadores
         self.last_heartbeat = {}
         self.timeout = 15  # Intervalo de tempo em segundos para checar heartbeats
         self.pending_confirmations = {}
@@ -67,6 +67,21 @@ class Lider:
         if subscriber_uri not in self.subscribers:
             self.subscribers[subscriber_uri] = role
             print(f"[Líder] Registrado: {subscriber_uri} como {role}")
+        # Se mudou o role
+        elif self.subscribers[subscriber_uri] != role:
+            self.subscribers[subscriber_uri] = role
+            print(f"[Líder] Atualizado: {subscriber_uri} para {role}")
+
+    #Notifica todos os votantes sobre a mudança no quórum
+    def notify_voters_list(self):
+        for subscriber_uri in self.subscribers:
+            try:
+                voter = Pyro5.api.Proxy(subscriber_uri)
+                voter.update_voter_list(self.subscribers)  # Envia a lista completa de participantes
+                print(f"Notificando votante {subscriber_uri} sobre a nova lista de participantes.")
+            except Exception as e:
+                print(f"Erro ao notificar votante {subscriber_uri}: {e}")
+
 
     # Registra o heartbeat recebido de um votante
     def register_heartbeat(self, voter_uri):

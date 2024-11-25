@@ -11,7 +11,8 @@ class Broker:
         self.data = []
         self.epoch = 1  # Época inicial
         self.offset = 0  # Offset inicial
-
+        self.voters = []
+        
     def get_role(self):
         return self.role  # Método para retornar o role do broker
 
@@ -62,8 +63,12 @@ class Broker:
         with Pyro5.api.locate_ns() as ns:
             leader_uri = ns.lookup("Lider_Epoca1")
             leader = Pyro5.api.Proxy(leader_uri)
+            leader.register_subscriber(str(self.uri))
             self.update_log(leader.get_confirmed_messages())
 
+    def update_voter_list(self, voter_list):
+        self.voters = voter_list
+        print(f"[{self.role} {self.name}] Lista de participantes atualizada: {self.voters}")
 
 def start_broker(name, role):
     print(f"Iniciando broker {role} {name}...")  # Print indicando que a thread foi iniciada
