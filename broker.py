@@ -29,16 +29,17 @@ class Broker:
             self.data.append(message)  # Adiciona ao log local
             self.offset += 1
             print(f"[Votante {self.name}] Mensagem replicada: {message}, Offset: {self.offset}")
-            # Envia confirmação ao líder
+            # Envia confirmação ao líder com o URI do votante
             try:
                 with Pyro5.api.locate_ns() as ns:
                     leader_uri = ns.lookup(f"Lider_Epoca{self.epoch}")
                     leader = Pyro5.api.Proxy(leader_uri)
-                    leader.confirm_commit(self.offset, self.name)
+                    leader.confirm_commit(self.offset, str(self.uri))  # Passa o URI
             except Exception as e:
                 print(f"[Votante {self.name}] Falha ao confirmar mensagem: {e}")
         else:
             print(f"[Votante {self.name}] Época inconsistente. Local: {self.epoch}, Líder: {leader_epoch}")
+
 
 
     # Envia heartbeats periódicos ao líder.
@@ -50,8 +51,8 @@ class Broker:
                 print(f"[{self.role} {self.name}] Heartbeat enviado para o líder.")
             except Exception as e:
                 print(f"[{self.role} {self.name}] Erro ao enviar heartbeat: {e}")
-            time.sleep(5)  # Ajuste o intervalo de envio do heartbeat
-            # time.sleep(11)  # Teste para fazer o temporizador falhar
+            time.sleep(9)  # Ajuste o intervalo de envio do heartbeat
+            # time.sleep(22)  # Teste para fazer o temporizador falhar
 
 
     def promote_to_voter(self):

@@ -8,12 +8,12 @@ class Lider:
         self.data = []
         self.subscribers = {}
         self.last_heartbeat = {}
-        self.timeout = 7  # Intervalo de tempo em segundos para checar heartbeats
+        self.timeout = 15  # Intervalo de tempo em segundos para checar heartbeats
         self.pending_confirmations = {}
         self.confirmed_messages = []  # Mensagens confirmadas por quórum
         self.quorum_size = 2 #len(self.subscribers) // 2 + 1
         self.epoch = 1
-        self.offset = 0 
+        self.offset = 0
 
     def get_epoch(self):
         return self.epoch
@@ -39,27 +39,28 @@ class Lider:
             except Exception as e:
                 print(f"[Líder] Falha ao enviar mensagem para {subscriber_uri}: {e}")
 
-    def confirm_commit(self, offset, voter_name):
+    def confirm_commit(self, offset, voter_uri):
         if offset not in self.pending_confirmations:
             return  # Offset não está pendente
 
-        if voter_name not in self.pending_confirmations[offset]:
-            self.pending_confirmations[offset].append(voter_name)
+        # Adiciona o URI do votante à lista de confirmações pendentes
+        if voter_uri not in self.pending_confirmations[offset]:
+            self.pending_confirmations[offset].append(voter_uri)
 
         # Verifica se o quórum foi atingido
         if len(self.pending_confirmations[offset]) >= self.quorum_size:
             print(f"[Líder] Mensagem com offset {offset} confirmada e comprometida.")
-            # Adiciona a lista de mensagens confirmadas
             '''
-            # Adicionar a mensagem completa com epoch e offset
-            self.confirmed_messages.append(
-                next(entry for entry in self.data if entry["offset"] == offset)
-            )'''
-            # Adicionar somente a mensagem
+                # Adicionar a mensagem completa com epoch e offset
+                self.confirmed_messages.append(
+                    next(entry for entry in self.data if entry["offset"] == offset)
+                )'''
+            # Adiciona somente a mensagem
             self.confirmed_messages.append(
                 next(entry["message"] for entry in self.data if entry["offset"] == offset)
             )
             del self.pending_confirmations[offset]
+    
 
     #Registra um broker no líder e armazena seu estado (votante ou observador).
     def register_subscriber(self, subscriber_uri, role):
