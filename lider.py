@@ -12,37 +12,54 @@ class Lider:
         self.pending_confirmations = {}
         self.confirmed_messages = []  # Mensagens confirmadas por quórum
         self.quorum_size = 2 #len(self.subscribers) // 2 + 1
+        self.epoch = 1
+        self.offset = 0 
+
+    def get_epoch(self):
+        return self.epoch
 
     def get_confirmed_messages(self):
         return self.confirmed_messages
 
     def publish_message(self, message):
-        self.data.append(message)
-        print(f"[Líder] Mensagem adicionada ao log (pendente): {message}")
-        self.pending_confirmations[message] = []  # Armazena confirmações pendentes
+        # Incrementa o offset para cada nova mensagem
+        self.offset += 1
+        log_entry = {"epoch": self.epoch, "offset": self.offset, "message": message}
+        self.data.append(log_entry)
+        print(f"[Líder] Mensagem adicionada ao log (pendente): {log_entry}")
+        self.pending_confirmations[self.offset] = []  # Usar offset como chave
 
         # Envia a mensagem para os votantes replicarem
         for subscriber_uri in self.subscribers:
             try:
                 subscriber = Pyro5.api.Proxy(subscriber_uri)
-                role = subscriber.get_role()  # Obtém o role do votante
-                if "Votante" in role:  # Verifica se é um votante
-                    subscriber.replicate_log(message)
+                role = subscriber.get_role()
+                if "Votante" in role:
+                    subscriber.replicate_log(log_entry, self.epoch)
             except Exception as e:
                 print(f"[Líder] Falha ao enviar mensagem para {subscriber_uri}: {e}")
 
-    def confirm_commit(self, message, voter_name):
-        if message not in self.pending_confirmations:
-            return  # Mensagem não está pendente
+    def confirm_commit(self, offset, voter_name):
+        if offset not in self.pending_confirmations:
+            return  # Offset não está pendente
 
-        if voter_name not in self.pending_confirmations[message]:
-            self.pending_confirmations[message].append(voter_name)
+        if voter_name not in self.pending_confirmations[offset]:
+            self.pending_confirmations[offset].append(voter_name)
 
         # Verifica se o quórum foi atingido
-        if len(self.pending_confirmations[message]) >= self.quorum_size:
-            print(f"[Líder] Mensagem {message} confirmada e comprometida.")
-            self.confirmed_messages.append(message)
-            del self.pending_confirmations[message]
+        if len(self.pending_confirmations[offset]) >= self.quorum_size:
+            print(f"[Líder] Mensagem com offset {offset} confirmada e comprometida.")
+            # Adiciona a lista de mensagens confirmadas
+            '''
+            # Adicionar a mensagem completa com epoch e offset
+            self.confirmed_messages.append(
+                next(entry for entry in self.data if entry["offset"] == offset)
+            )'''
+            # Adicionar somente a mensagem
+            self.confirmed_messages.append(
+                next(entry["message"] for entry in self.data if entry["offset"] == offset)
+            )
+            del self.pending_confirmations[offset]
 
     #Registra um broker no líder e armazena seu estado (votante ou observador).
     def register_subscriber(self, subscriber_uri, role):
