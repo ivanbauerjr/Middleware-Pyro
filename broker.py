@@ -1,3 +1,4 @@
+import sys
 import Pyro5.api
 from threading import Thread
 import time
@@ -20,6 +21,7 @@ class Broker:
         self.role = new_role
         print(f"[{self.role} {self.name}] Role atualizado para {new_role}.")
 
+    # Quando é promovido a votante, o observador deve solicitar os dados ao líder
     def update_log(self, leader_data, leader_offset, leader_epoch):
         self.data = leader_data
         self.epoch = leader_epoch
@@ -113,6 +115,7 @@ class Broker:
             leader_uri = ns.lookup("Lider_Epoca1")
             leader = Pyro5.api.Proxy(leader_uri)
             self.update_log(leader.get_data(), leader.get_offset(), leader.get_epoch())
+            leader.notify_voters_participants_list()
 
     def update_voter_list(self, voters):
         def update():
@@ -146,8 +149,11 @@ def start_broker(name, role):
 
 
 if __name__ == "__main__":
-    print("Iniciando threads para os brokers...")  # Indicação de que as threads estão sendo iniciadas
-    Thread(target=start_broker, args=("Votante1", "Votante")).start()
-    Thread(target=start_broker, args=("Votante2", "Votante")).start()
-    Thread(target=start_broker, args=("Observador1", "Observador")).start()
-    print("Threads de brokers iniciadas.")  # Indicação de que todas as threads foram lançadas
+    Thread(target=start_broker, args=(sys.argv[1], sys.argv[2])).start()
+    
+    # print("Iniciando threads para os brokers...")  # Indicação de que as threads estão sendo iniciadas
+    # Thread(target=start_broker, args=("Votante1", "Votante")).start()
+    # Thread(target=start_broker, args=("Votante2", "Votante")).start()
+    # Thread(target=start_broker, args=("Observador1", "Observador")).start()
+    # print("Threads de brokers iniciadas.")  # Indicação de que todas as threads foram lançadas
+    

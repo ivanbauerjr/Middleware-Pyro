@@ -119,6 +119,7 @@ class Lider:
 
     def notify_voters_participants_list(self):
         voters = [uri for uri, role in self.subscribers.items() if "Votante" in role]
+        #print(f"[Líder] Lista de  (voters) atual: {voters}")
         # Cria uma nova thread para não bloquear as threads principais
         def notify():
             for subscriber_uri in list(self.subscribers):
@@ -141,29 +142,33 @@ class Lider:
         current_time = time.time()
         print("[Líder] Iniciando checagem de heartbeats...")
 
-        for voter_uri, last_time in self.last_heartbeat.items():
+        # Iterar sobre uma cópia dos itens do dicionário
+        for voter_uri, last_time in list(self.last_heartbeat.items()):
             print(f"[Líder] Checando {voter_uri} - Último heartbeat: {last_time}")
             if current_time - last_time > self.timeout:
                 print(f"[Líder] Votante {voter_uri} falhou ou está indisponível.")
+                if voter_uri in self.subscribers:
+                    # Tentar notificar o votante que falhou e alterar seu papel para Observador
+                    try:
+                        subscriber = Pyro5.api.Proxy(voter_uri)
+                        subscriber.update_role("Observador")
+                        # Altera o papel de "Votante" para "Observador"
+                        self.subscribers[voter_uri] = "Observador"
+                        #print(f"[Líder] Votante {voter_uri} alterado para Observador.")
+                    except Exception as e:
+                        print(f"[Líder] Erro ao notificar {voter_uri}: {e}")
+                        # Remover o votante falho da lista de participantes
+                        del self.subscribers[voter_uri]
+                    
+                        
+                    # Remover o votante falho da lista de heartbeats
+                    del self.last_heartbeat[voter_uri]
 
-                num_voters = len([uri for uri, role in self.subscribers.items() if "Votante" in role]) - 1
+                # Verificar quórum após a remoção
+                num_voters = len([uri for uri, role in self.subscribers.items() if "Votante" in role])
                 if num_voters < self.quorum_size:
                     print("[Líder] Quórum não atingido. Promovendo observador!")
                     self.promote_observer()
-
-                if voter_uri in self.subscribers:
-                    # Altera o papel de "Votante" para "Observador"
-                    self.subscribers[voter_uri] = "Observador"
-                    print(f"[Líder] Votante {voter_uri} alterado para Observador.")
-
-                    # Notificar o votante para que ele saiba sobre a mudança
-                    try:
-                        subscriber = Pyro5.api.Proxy(voter_uri)
-                        subscriber.update_role("Observador")  # Aqui você pode notificar o votante sobre a mudança
-                        self.notify_voters_participants_list()  # Notificar todos os votantes após as mudanças
-                    except Exception as e:
-                        print(f"[Líder] Erro ao notificar {voter_uri}: {e}")
-                
             else:
                 print(f"[Líder] Votante {voter_uri} está ativo.")
 
@@ -172,13 +177,13 @@ class Lider:
             try:
                 subscriber = Pyro5.api.Proxy(subscriber_uri)
                 if subscriber.get_role() == "Observador":
-                    subscriber.promote_to_voter()
                     self.subscribers[subscriber_uri] = "Votante"
-                    print(f"[Líder] {subscriber_uri} promovido de Observador para Votante.")
+                    subscriber.promote_to_voter()
+                    print(f"[Líder] Promovido de Observador para Votante: {subscriber_uri} ")
                     #self.notify_voters_participants_list()  # Notificar todos os votantes após a promoção
-                    break  # Assim que promover o primeiro, notifica e sai
+                    #break  # Assim que promover o primeiro, notifica e sai
             except Exception as e:
-                print(f"[Líder] Erro ao promover observador: {e}")
+                print(f"[Líder] Erro ao alterar de Observador para Votante: {e}")
 
 
     def start_heartbeat_check(self):
