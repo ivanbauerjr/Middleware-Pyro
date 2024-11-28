@@ -2,7 +2,13 @@ import threading
 import time
 import Pyro5.api
 
-@Pyro5.api.expose
+#Correções após apresentação 28/11:
+#Substituir get.role() por self.subscribers[subscriber_uri] [v]
+#Arrumar quais métodos são exposed [v]
+#quorum_size = 3 e minimum_quorum_threshold = quorum_size // 2 [v]
+#Lista de mensagens confirmadas nos votantes [v]
+#Quando um observador é promovido a votante, ele deve solicitar ao líder os dados comprometidos [v]
+
 class Lider:
     def __init__(self):
         self.data = []
@@ -11,23 +17,29 @@ class Lider:
         self.timeout = 15  # Intervalo de tempo em segundos para checar heartbeats
         self.pending_confirmations = {}
         self.confirmed_messages = []  # Mensagens confirmadas por quórum
-        self.quorum_size = 2 #len(self.subscribers) // 2 + 1
+        self.quorum_size = 3  # Tamanho do quórum
+        self.minimum_quorum_threshold = self.quorum_size // 2  # Tamanho do quórum necessário para confirmar uma mensagem; sem o +1, pois o líder já é sempre +1 separadamente
         self.epoch = 1
         self.offset = 0
 
+    @Pyro5.api.expose
     def get_epoch(self):
         return self.epoch
 
+    @Pyro5.api.expose
     def get_confirmed_messages(self):
         return self.confirmed_messages
     
+    @Pyro5.api.expose
     def get_data(self):
         return self.data
     
+    @Pyro5.api.expose
     def get_offset(self):
         return self.offset
 
     # 1. O líder recebe uma gravação e a adiciona ao seu log
+    @Pyro5.api.expose
     def publish_message(self, message):
         # Incrementa o offset para cada nova mensagem
         self.offset += 1
@@ -40,7 +52,7 @@ class Lider:
         for subscriber_uri in self.subscribers:
             try:
                 subscriber = Pyro5.api.Proxy(subscriber_uri)
-                role = subscriber.get_role()
+                role = self.subscribers[subscriber_uri]
                 if "Votante" in role:
                     subscriber.replicate_log()
             except Exception as e:
@@ -52,6 +64,7 @@ class Lider:
     #informará a maior época e seu offset final antes da época
     #solicitada. Se a solicitação for válida, ele retornará os dados
     #correspondentes a partir do offset fornecido na requisição;
+    @Pyro5.api.expose
     def handle_search_request(self, epoch, offset, voter_uri):
         if epoch == self.epoch:
             if offset < self.offset:
@@ -81,6 +94,7 @@ class Lider:
             except Exception as e:
                 print(f"[Líder {self.name}] Erro ao responder erro de época ao {voter_uri}: {e}")
 
+    @Pyro5.api.expose
     def confirm_commit(self, offset, voter_uri):
         if offset not in self.pending_confirmations:
             return  # Offset não está pendente
@@ -90,7 +104,7 @@ class Lider:
             self.pending_confirmations[offset].append(voter_uri)
 
         # Verifica se o quórum foi atingido
-        if len(self.pending_confirmations[offset]) >= self.quorum_size:
+        if len(self.pending_confirmations[offset]) >= self.minimum_quorum_threshold:
             print(f"[Líder] Mensagem com offset {offset} confirmada e comprometida.")
 
             # Adicionar a mensagem completa com epoch e offset
@@ -103,10 +117,20 @@ class Lider:
             self.confirmed_messages.append(
                 next(entry["message"] for entry in self.data if entry["offset"] == offset)
             )
+
+            # Informa aos votantes que a mensagem foi confirmada
+            for subscriber_uri in self.subscribers:
+                try:
+                    subscriber = Pyro5.api.Proxy(subscriber_uri)
+                    subscriber.update_confirmed_messages(self.confirmed_messages)
+                except Exception as e:
+                    print(f"[Líder] Erro ao notificar {subscriber_uri}: {e}")
+
             del self.pending_confirmations[offset]
     
 
     #Registra um broker no líder e armazena seu estado (votante ou observador).
+    @Pyro5.api.expose
     def register_subscriber(self, subscriber_uri, role):
         if subscriber_uri not in self.subscribers:
             self.subscribers[subscriber_uri] = role
@@ -117,6 +141,7 @@ class Lider:
             print(f"[Líder] Atualizado: {subscriber_uri} para {role}")
         self.notify_voters_participants_list()
 
+    @Pyro5.api.expose
     def notify_voters_participants_list(self):
         voters = [uri for uri, role in self.subscribers.items() if "Votante" in role]
         #print(f"[Líder] Lista de  (voters) atual: {voters}")
@@ -133,6 +158,7 @@ class Lider:
         threading.Thread(target=notify).start()
 
     # Registra o heartbeat recebido de um votante
+    @Pyro5.api.expose
     def register_heartbeat(self, voter_uri):
         self.last_heartbeat[voter_uri] = time.time()  # Atualiza o tempo do último heartbeat
         print(f"[Líder] Heartbeat recebido de {voter_uri}")
@@ -166,7 +192,7 @@ class Lider:
 
                 # Verificar quórum após a remoção
                 num_voters = len([uri for uri, role in self.subscribers.items() if "Votante" in role])
-                if num_voters < self.quorum_size:
+                if num_voters < self.minimum_quorum_threshold:
                     print("[Líder] Quórum não atingido. Promovendo observador!")
                     self.promote_observer()
             else:
@@ -176,7 +202,7 @@ class Lider:
         for subscriber_uri in self.subscribers:
             try:
                 subscriber = Pyro5.api.Proxy(subscriber_uri)
-                if subscriber.get_role() == "Observador":
+                if self.subscribers[subscriber_uri] == "Observador":
                     self.subscribers[subscriber_uri] = "Votante"
                     subscriber.promote_to_voter()
                     print(f"[Líder] Promovido de Observador para Votante: {subscriber_uri} ")

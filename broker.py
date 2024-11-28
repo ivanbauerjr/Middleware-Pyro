@@ -3,7 +3,6 @@ import Pyro5.api
 from threading import Thread
 import time
 
-@Pyro5.api.expose
 class Broker:
     def __init__(self, name, role):
         self.name = name
@@ -13,21 +12,28 @@ class Broker:
         self.epoch = 1  # Época inicial
         self.offset = 0  # Offset inicial
         self.voters = []
-        
-    def get_role(self):
-        return self.role  # Método para retornar o role do broker
+        self.quorum_size = 3  # Tamanho do quórum
+        self.confirmed_messages = []  # Mensagens confirmadas
 
+    @Pyro5.api.expose
     def update_role(self, new_role):
         self.role = new_role
         print(f"[{self.role} {self.name}] Role atualizado para {new_role}.")
 
     # Quando é promovido a votante, o observador deve solicitar os dados ao líder
-    def update_log(self, leader_data, leader_offset, leader_epoch):
+    def update_log(self, leader_data, leader_offset, leader_epoch, confirmed_messages):
         self.data = leader_data
         self.epoch = leader_epoch
         self.offset = leader_offset
+        self.confirmed_messages = confirmed_messages
         print(f"[{self.role} {self.name}] Log atualizado: Época: {self.epoch}, Offset: {self.offset}")
 
+    @Pyro5.api.expose
+    def update_confirmed_messages(self, confirmed_messages):
+        self.confirmed_messages = confirmed_messages
+        #print(f"[{self.role} {self.name}] Mensagens confirmadas atualizadas: {confirmed_messages}")
+
+    @Pyro5.api.expose
     def replicate_log(self):
         self.send_search_request(self.epoch, self.offset)
 
@@ -44,7 +50,7 @@ class Broker:
         except Exception as e:
             print(f"[Votante {self.name}] Erro ao enviar requisição de busca: {e}")
 
-
+    @Pyro5.api.expose
     def receive_data(self, data):
         self.data.append(data)  # Adiciona ao log local
         self.offset = len(self.data)
@@ -58,6 +64,7 @@ class Broker:
             print(f"[Votante {self.name}] Falha ao confirmar mensagem: {e}")
 
     # 5. Pode ocorrer de um votante divergir do líder em relação às entradas do log...
+    @Pyro5.api.expose
     def receive_error(self, epoch, offset):
         print(f"[Votante {self.name}] Erro recebido. A época {epoch} possui dados confirmados até o offset {offset}.")
         # Truncando o log local até o offset informado
@@ -67,6 +74,7 @@ class Broker:
         self.send_search_request(epoch, offset)
     
     # Não deve ocorrer pois estamos assumindo que o líder é sempre confiável
+    @Pyro5.api.expose
     def receive_epoch_error(self, epoch):
         print(f"[Votante {self.name}] Erro de época recebido. A época correta é {epoch}.")
         # Atualizando a época e reenviando a requisição de busca
@@ -106,7 +114,7 @@ class Broker:
             time.sleep(9)  # Ajuste o intervalo de envio do heartbeat
             #time.sleep(33)  # Teste para fazer o temporizador falhar
 
-
+    @Pyro5.api.expose
     def promote_to_voter(self):
         print(f"[{self.role} {self.name}] Promovido a votante.")
         self.role = "Votante"
@@ -114,9 +122,10 @@ class Broker:
         with Pyro5.api.locate_ns() as ns:
             leader_uri = ns.lookup("Lider_Epoca1")
             leader = Pyro5.api.Proxy(leader_uri)
-            self.update_log(leader.get_data(), leader.get_offset(), leader.get_epoch())
+            self.update_log(leader.get_data(), leader.get_offset(), leader.get_epoch(), leader.get_confirmed_messages())
             leader.notify_voters_participants_list()
 
+    @Pyro5.api.expose
     def update_voter_list(self, voters):
         def update():
             #time.sleep(1)
